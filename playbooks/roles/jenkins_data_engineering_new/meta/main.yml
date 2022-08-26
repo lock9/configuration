@@ -10,6 +10,7 @@ dependencies:
     jenkins_common_main_labels:
       - master
     jenkins_common_configuration_scripts:
+      - 0StartInQuietMode.groovy
       - 1addJarsToClasspath.groovy
       - 2checkInstalledPlugins.groovy
       - 3importCredentials.groovy
