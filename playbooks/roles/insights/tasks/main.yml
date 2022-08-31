@@ -1,166 +1,144 @@
----
-#
-# edX Configuration
-#
-# github:     https://github.com/edx/configuration
-# wiki:       https://openedx.atlassian.net/wiki/display/OpenOPS
-# code style: https://openedx.atlassian.net/wiki/display/OpenOPS/Ansible+Code+Conventions
-# license:    https://github.com/edx/configuration/blob/master/LICENSE.TXT
-#
-#
-#
-# Tasks for role insights
-#
-# Overview:
-#
-#
-# Dependencies:
-#
-#
-# Example play:
-#
-#
-
-- name: setup the insights env file
-  template:
-    src: "edx/app/insights/insights_env.j2"
+--- 
+- 
+  name: "setup the insights env file"
+  tags: 
+    - install
+    - "install:configuration"
+  template: 
     dest: "{{ insights_app_dir }}/insights_env"
-    owner: "{{ insights_user }}"
     group: "{{ insights_user }}"
-    mode: 0644
-  tags:
-    - install
-    - install:configuration
-
-- name: install application requirements
-  pip:
-    requirements: "{{ insights_requirements_base }}/{{ item }}"
-    virtualenv: "{{ insights_venv_dir }}"
-    state: present
+    mode: 420
+    owner: "{{ insights_user }}"
+    src: edx/app/insights/insights_env.j2
+- 
+  become_user: "{{ insights_user }}"
+  name: "install application requirements"
+  pip: 
     extra_args: "--exists-action w"
+    requirements: "{{ insights_requirements_base }}/{{ item }}"
+    state: present
+    virtualenv: "{{ insights_venv_dir }}"
     virtualenv_python: python3.8
-  become_user: "{{ insights_user }}"
+  tags: 
+    - install
+    - "install:app-requirements"
   with_items: "{{ insights_requirements }}"
-  tags:
-    - install
-    - install:app-requirements
-
-- name: create nodeenv
+- 
+  become_user: "{{ insights_user }}"
+  name: "create nodeenv"
   shell: "{{ insights_venv_dir }}/bin/nodeenv {{ insights_nodeenv_dir }}  --node={{ INSIGHTS_NODE_VERSION }} --prebuilt --force"
-  become_user: "{{ insights_user }}"
-  tags:
+  tags: 
     - install
-    - install:system-requirements
-
-- name: upgrade npm
-   command: "npm install -g npm@{{ INSIGHTS_NPM_VERSION }}"
-   become_user: "{{ insights_user }}"
-   environment: "{{ insights_environment }}"
-   tags:
-     - install
-     - install:system-requirements
-
-# install with the shell command instead of the ansible npm module so we don't accidentally re-write package.json
-- name: install node dependencies
+    - "install:system-requirements"
+- 
+  become_user: "{{ insights_user }}"
+  command: "npm install -g npm@{{ INSIGHTS_NPM_VERSION }}"
+  environment: "{{ insights_environment }}"
+  name: "upgrade npm"
+  tags: 
+    - install
+    - "install:system-requirements"
+- 
+  args: 
+    chdir: "{{ insights_code_dir }}"
+  become_user: "{{ insights_user }}"
+  environment: "{{ insights_environment }}"
+  name: "install node dependencies"
   shell: "{{ insights_nodeenv_bin }}/npm install"
-  args:
+  tags: 
+    - install
+    - "install:app-requirements"
+- 
+  args: 
     chdir: "{{ insights_code_dir }}"
   become_user: "{{ insights_user }}"
   environment: "{{ insights_environment }}"
-  tags:
-    - install
-    - install:app-requirements
-
-- name: migrate
+  name: migrate
+  run_once: true
   shell: "DB_MIGRATION_USER='{{ COMMON_MYSQL_MIGRATE_USER }}' DB_MIGRATION_PASS='{{ COMMON_MYSQL_MIGRATE_PASS }}' {{ insights_venv_dir }}/bin/python {{ insights_manage }} migrate --noinput"
-  args:
-    chdir: "{{ insights_code_dir }}"
-  become_user: "{{ insights_user }}"
-  environment: "{{ insights_environment }}"
-  when: migrate_db is defined and migrate_db|lower == "yes"
-  run_once: yes
-  tags:
+  tags: 
     - migrate
-    - migrate:db
-
-- name: run webpack
+    - "migrate:db"
+  when: "migrate_db is defined and migrate_db|lower == \"yes\""
+- 
+  args: 
+    chdir: "{{ insights_code_dir }}"
+  become_user: "{{ insights_user }}"
+  environment: "{{ insights_environment }}"
+  name: "run webpack"
   shell: ". {{ insights_nodeenv_bin }}/activate && {{ insights_node_bin }}/webpack --config webpack.prod.config.js"
-  args:
+  tags: 
+    - assets
+    - "assets:gather"
+- 
+  args: 
     chdir: "{{ insights_code_dir }}"
   become_user: "{{ insights_user }}"
   environment: "{{ insights_environment }}"
-  tags:
-    - assets
-    - assets:gather
-
-- name: run collectstatic
+  name: "run collectstatic"
   shell: "{{ insights_venv_dir }}/bin/python {{ insights_manage }} {{ item }}"
-  args:
-    chdir: "{{ insights_code_dir }}"
-  become_user: "{{ insights_user }}"
-  environment: "{{ insights_environment }}"
-  with_items:
-    - "collectstatic --noinput"
-  tags:
+  tags: 
     - assets
-    - assets:gather
-
-- name: write out the supervisior wrapper
-  template:
-    src: "edx/app/insights/insights.sh.j2"
+    - "assets:gather"
+  with_items: 
+    - "collectstatic --noinput"
+- 
+  name: "write out the supervisior wrapper"
+  tags: 
+    - install
+    - "install:configuration"
+  template: 
     dest: "{{ insights_app_dir }}/{{ insights_service_name }}.sh"
-    mode: 0650
-    owner: "{{ supervisor_user }}"
     group: "{{ common_web_user }}"
-  tags:
+    mode: 424
+    owner: "{{ supervisor_user }}"
+    src: edx/app/insights/insights.sh.j2
+- 
+  name: "write supervisord config"
+  tags: 
     - install
-    - install:configuration
-
-- name: write supervisord config
-  template:
-    src: edx/app/supervisor/conf.d.available/insights.conf.j2
+    - "install:configuration"
+  template: 
     dest: "{{ supervisor_available_dir }}/{{ insights_service_name }}.conf"
-    owner: "{{ supervisor_user }}"
     group: "{{ common_web_user }}"
-    mode: 0644
-  tags:
-    - install
-    - install:configuration
-
-- name: enable supervisor script
-  file:
-    src: "{{ supervisor_available_dir }}/{{ insights_service_name }}.conf"
+    mode: 420
+    owner: "{{ supervisor_user }}"
+    src: edx/app/supervisor/conf.d.available/insights.conf.j2
+- 
+  file: 
     dest: "{{ supervisor_cfg_dir }}/{{ insights_service_name }}.conf"
+    force: true
+    src: "{{ supervisor_available_dir }}/{{ insights_service_name }}.conf"
     state: link
-    force: yes
-  when: not disable_edx_services
-  tags:
+  name: "enable supervisor script"
+  tags: 
     - install
-    - install:configuration
-
-- name: update supervisor configuration
+    - "install:configuration"
+  when: "not disable_edx_services"
+- 
+  name: "update supervisor configuration"
   shell: "{{ supervisor_ctl }} -c {{ supervisor_cfg }} update"
-  when: not disable_edx_services
-  tags:
+  tags: 
     - manage
-    - manage:start
-
-- name: create manage.py symlink
-  file:
-    src: "{{ insights_manage }}"
+    - "manage:start"
+  when: "not disable_edx_services"
+- 
+  file: 
     dest: "{{ COMMON_BIN_DIR }}/manage.{{ insights_service_name }}"
+    src: "{{ insights_manage }}"
     state: link
-  tags:
+  name: "create manage.py symlink"
+  tags: 
     - install
-    - install:base
-
-- name: restart insights
-  supervisorctl:
-    state: restarted
-    supervisorctl_path: "{{ supervisor_ctl }}"
+    - "install:base"
+- 
+  become_user: "{{ supervisor_service_user }}"
+  name: "restart insights"
+  supervisorctl: 
     config: "{{ supervisor_cfg }}"
     name: "{{ insights_service_name }}"
-  when: not disable_edx_services
-  become_user: "{{ supervisor_service_user }}"
-  tags:
-    - manage:start
+    state: restarted
+    supervisorctl_path: "{{ supervisor_ctl }}"
+  tags: 
+    - "manage:start"
+  when: "not disable_edx_services"
